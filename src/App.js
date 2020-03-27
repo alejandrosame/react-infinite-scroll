@@ -6,12 +6,19 @@ import { compose } from 'recompose';
 const applyUpdateResult = (result) => (prevState) => ({
   hits: [...prevState.hits, ...result.hits],
   page: result.page,
+  isError: false,
   isLoading: false,
 });
 
 const applySetResult = (result) => (prevState) => ({
   hits: result.hits,
   page: result.page,
+  isError: false,
+  isLoading: false,
+});
+
+const applySetError = (prevState) => ({
+  isError: true,
   isLoading: false,
 });
 
@@ -25,6 +32,7 @@ class App extends React.Component {
     this.state = {
       hits: [],
       page: null,
+      isError: false,
       isLoading: false,
     };
   }
@@ -46,8 +54,12 @@ class App extends React.Component {
     this.setState({ isLoading: true });
     fetch(getHackerNewsUrl(value, page))
       .then(response => response.json())
-      .then(result => this.onSetResult(result, page));
+      .then(result => this.onSetResult(result, page))
+      .catch(this.onSetError);
   }
+
+  onSetError = () =>
+    this.setState(applySetError);
 
   onSetResult = (result, page) =>
     page === 0
@@ -63,8 +75,9 @@ class App extends React.Component {
             <button type="submit">Search</button>
           </form>
         </div>
-        <ListWithLoadingWithInfinite
+        <AdvancedList
           list={this.state.hits}
+          isError={this.state.isError}
           isLoading={this.state.isLoading}
           page={this.state.page}
           onPaginatedSearch={this.onPaginatedSearch}
@@ -83,56 +96,71 @@ const List = ({ list, isLoading, page, onPaginatedSearch }) =>
     </div>
   </div>
 
-const withInfiniteScroll = (Component) =>
+const withLoading = (conditionFn) => (Component) => (props) =>
+  <div>
+    <Component {...props} />
+
+    <div className="interactions">
+      {conditionFn(props) && <span>Loading...</span>}
+    </div>
+  </div>
+
+const withPaginated = (conditionFn) => (Component) => (props) =>
+  <div>
+    <Component {...props} />
+
+    <div className="interactions">
+      {
+        conditionFn(props) &&
+        <div>
+          <div>
+            Something went wrong...
+          </div>
+          <button
+            type="button"
+            onClick={props.onPaginatedSearch}
+          >
+            Try Again
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+
+const withInfiniteScroll = (conditionFn) => (Component) =>
   class WithInfiniteScroll extends React.Component {
     componentDidMount() {
       window.addEventListener('scroll', this.onScroll, false);
     }
+
     componentWillUnmount() {
       window.removeEventListener('scroll', this.onScroll, false);
     }
-    onScroll = () => {
-      if (
-        (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 500) &&
-        this.props.list.length &&
-        !this.props.isLoading
-      ) {
-        this.props.onPaginatedSearch();
-      }
-    }
+
+    onScroll = () =>
+      conditionFn(this.props) && this.props.onPaginatedSearch();
+
     render() {
       return <Component {...this.props} />;
     }
   }
 
-const withLoading = (Component) => (props) =>
-  <div>
-    <Component {...props} />
-    <div className="interactions">
-      {props.isLoading && <span>Loading...</span>}
-    </div>
-  </div>
+const paginatedCondition = props =>
+  props.page !== null && !props.isLoading && props.isError;
 
-const withPaginated = (Component) => (props) =>
-  <div>
-    <Component {...props} />
-    <div className="interactions">
-      {
-        (props.page !== null && !props.isLoading) &&
-        <button
-          type="button"
-          onClick={props.onPaginatedSearch}
-        >
-          More
-        </button>
-      }
-    </div>
-  </div>
+const infiniteScrollCondition = props =>
+  (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 500)
+  && props.list.length
+  && !props.isLoading
+  && !props.isError;
 
-const ListWithLoadingWithInfinite = compose(
-  // withPaginated,
-  withInfiniteScroll,
-  withLoading,
+const loadingCondition = props =>
+  props.isLoading;
+
+const AdvancedList = compose(
+  withPaginated(paginatedCondition),
+  withInfiniteScroll(infiniteScrollCondition),
+  withLoading(loadingCondition),
 )(List);
 
 export default App;
